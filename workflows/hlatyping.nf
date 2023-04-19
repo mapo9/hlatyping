@@ -57,6 +57,8 @@ include { SAMTOOLS_COLLATEFASTQ       } from '../modules/nf-core/samtools/collat
 include { SAMTOOLS_VIEW               } from '../modules/nf-core/samtools/view/main'
 include { YARA_INDEX                  } from '../modules/nf-core/yara/index/main'
 include { YARA_MAPPER                 } from '../modules/nf-core/yara/mapper/main'
+include { HLALA_PREPAREGRAPH          } from '../modules/nf-core/hlala/preparegraph/main'
+include { HLALA_TYPING                } from '../modules/nf-core/hlala/typing/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -182,11 +184,55 @@ workflow HLATYPING {
     //
     // MODULE: OptiType
     //
-    OPTITYPE (
-        YARA_MAPPER.out.bam.join(YARA_MAPPER.out.bai)
-    )
-    ch_versions = ch_versions.mix(OPTITYPE.out.versions)
+    // OPTITYPE (
+    //     YARA_MAPPER.out.bam.join(YARA_MAPPER.out.bai)
+    // )
+    // ch_versions = ch_versions.mix(OPTITYPE.out.versions)
 
+    //
+    // ===================== HLA-LA =====================
+    //
+
+    //
+    // MODULE: HLA-LA
+    //
+
+
+    
+    if ( params.preparegraph != "") {
+        ch_preparegraph = Channel.fromPath(params.preparegraph)
+
+        ch_input_files.fastq
+        .concat( ch_preparegraph )
+        .flatten()
+        .toList()
+        .map { meta, read_1, read_2, graph ->
+                [meta, graph]
+        }
+        .set { ch_hlala_preparegraph_input }
+
+        HLALA_PREPAREGRAPH ( 
+            ch_hlala_preparegraph_input
+        )
+    
+        ch_versions = ch_versions.mix(HLALA_PREPAREGRAPH.out.versions)
+    }
+
+
+    if ( params.graph != "") {
+        ch_graph = Channel.fromPath(params.graph)
+
+        YARA_MAPPER.out.bam.join(YARA_MAPPER.out.bai).dump(tag: 'yara joined')
+        YARA_MAPPER.out.bam.join(YARA_MAPPER.out.bai).set {yara_ch}
+
+        yara_ch.join(ch_graph.toList()).dump(tag: 'graph joined')
+        
+        // HLALA_TYPING ( 
+        //     ch_hlala_typing_input
+        // )
+
+        //ch_versions = ch_versions.mix(HLALA_TYPING.out.versions)
+    }
 
     //
     // MODULE: Pipeline reporting
@@ -210,7 +256,7 @@ workflow HLATYPING {
     ch_multiqc_files = ch_multiqc_files.mix(ch_methods_description.collectFile(name: 'methods_description_mqc.yaml'))
     ch_multiqc_files = ch_multiqc_files.mix(CUSTOM_DUMPSOFTWAREVERSIONS.out.mqc_yml.collect())
     ch_multiqc_files = ch_multiqc_files.mix(FASTQC.out.zip.collect{it[1]}.ifEmpty([]))
-    ch_multiqc_files = ch_multiqc_files.mix(OPTITYPE.out.output.collect{it[1]}.ifEmpty([]))
+    //ch_multiqc_files = ch_multiqc_files.mix(OPTITYPE.out.output.collect{it[1]}.ifEmpty([]))
 
     MULTIQC (
         ch_multiqc_files.collect(),
