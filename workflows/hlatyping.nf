@@ -59,6 +59,7 @@ include { YARA_INDEX                  } from '../modules/nf-core/yara/index/main
 include { YARA_MAPPER                 } from '../modules/nf-core/yara/mapper/main'
 include { HLALA_PREPAREGRAPH          } from '../modules/nf-core/hlala/preparegraph/main'
 include { HLALA_TYPING                } from '../modules/nf-core/hlala/typing/main'
+include { SAMTOOLS_INDEX              } from '../modules/nf-core/samtools/index/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -110,7 +111,6 @@ workflow HLATYPING {
     )
     ch_versions = ch_versions.mix(SAMTOOLS_COLLATEFASTQ.out.versions)
 
-
     //
     // Filter for reads depending on pairedness
     //
@@ -150,8 +150,7 @@ workflow HLATYPING {
         ch_input_with_references
     )
     ch_versions = ch_versions.mix(YARA_INDEX.out.versions)
-
-
+    
     //
     // Map sample-specific reads and index
     //
@@ -179,19 +178,24 @@ workflow HLATYPING {
         ch_mapping_input.index
     )
     ch_versions = ch_versions.mix(YARA_MAPPER.out.versions)
-
-
-    //
+    
     // MODULE: OptiType
-    //
-    // OPTITYPE (
-    //     YARA_MAPPER.out.bam.join(YARA_MAPPER.out.bai)
-    // )
-    // ch_versions = ch_versions.mix(OPTITYPE.out.versions)
+    
+    OPTITYPE (
+        YARA_MAPPER.out.bam.join(YARA_MAPPER.out.bai)
+    )
+    ch_versions = ch_versions.mix(OPTITYPE.out.versions)
 
     //
     // ===================== HLA-LA =====================
     //
+
+    // MODULE: SAMTOOLS INDEX
+
+    SAMTOOLS_INDEX(
+        ch_bam_pe_corrected
+    )
+    ch_versions = ch_versions.mix(SAMTOOLS_INDEX.out.versions)
 
     //
     // MODULE: HLA-LA
@@ -222,14 +226,33 @@ workflow HLATYPING {
     if ( params.graph != "") {
         ch_graph = Channel.fromPath(params.graph)
 
-        YARA_MAPPER.out.bam.join(YARA_MAPPER.out.bai).dump(tag: 'yara joined')
-        YARA_MAPPER.out.bam.join(YARA_MAPPER.out.bai).set {yara_ch}
+        ch_bam_pe_corrected.join(SAMTOOLS_INDEX.out.bai)
+                            .flatten()
+                            .concat( ch_graph )
+                            .toList()
+                            .set { ch_hlala_typing_input }
 
-        yara_ch.join(ch_graph.toList()).dump(tag: 'graph joined')
+        // ch_bam_pe_corrected.concat(ch_graph)
+        //                     .flatten()
+        //                     .toList()
+        //                     .map{ meta, bam, graph ->
+        //                             [meta, [graph]]
+        //                     }
+        //                     .set {meta_graph_ch}
         
-        // HLALA_TYPING ( 
-        //     ch_hlala_typing_input
-        // )
+        // YARA_MAPPER.out.bam.join(YARA_MAPPER.out.bai).dump(tag: "yara_joined")
+
+        // YARA_MAPPER.out.bam.join(YARA_MAPPER.out.bai)
+        //                     .join(meta_graph_ch)
+        //                     .set { ch_hlala_typing_input }
+        // ch_hlala_typing_input.dump(tag: "hlatyping_input")
+
+        
+        
+        
+        HLALA_TYPING ( 
+            ch_hlala_typing_input
+        )
 
         //ch_versions = ch_versions.mix(HLALA_TYPING.out.versions)
     }

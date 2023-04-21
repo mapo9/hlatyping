@@ -29,24 +29,20 @@ process HLALA_TYPING {
     def args = task.ext.args ?: ''
     def prefix = task.ext.prefix ?: "${meta.id}"
 
-    """
-    echo bam: $bam
-    echo bai: $bai
-    echo graph: $graph
-    
-    #mkdir graphs
-    #mv $graph graphs
-    #mv graphs /usr/local/opt/hla-la/
+    """    
+    mkdir graphs
+    mv $graph graphs
+    mv graphs /usr/local/opt/hla-la/
 
-    #mkdir $prefix
+    mkdir $prefix
 
-    #/usr/local/opt/hla-la/src/HLA-LA.pl \\
-    #    --BAM $bam \\
-    #    --graph ../graphs/$graph \\
-    #    --sampleID $prefix \\
-    #    --workingDir . \\
-    #    --maxThreads $task.cpus \\
-    #    $args
+    /usr/local/opt/hla-la/src/HLA-LA.pl \\
+        --BAM $bam \\
+        --graph ../graphs/$graph \\
+        --sampleID $prefix \\
+        --workingDir . \\
+        --maxThreads $task.cpus \\
+        $args
 
     cat <<-END_VERSIONS > versions.yml
     "${task.process}":

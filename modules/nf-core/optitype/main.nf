@@ -22,7 +22,7 @@ process OPTITYPE {
     def args2 = task.ext.args2  ?: ''
     prefix    = task.ext.prefix ?: "${meta.id}"
 
-    """
+    """    
     # Create a config for OptiType on a per sample basis with task.ext.args2
 
     #Doing it old school now
