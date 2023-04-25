@@ -220,10 +220,18 @@ workflow HLATYPING {
         )
     
         ch_versions = ch_versions.mix(HLALA_PREPAREGRAPH.out.versions)
+
+        // set HLALA_TYPING input
+        ch_bam_pe_corrected.join(SAMTOOLS_INDEX.out.bai)
+                            .flatten()
+                            .join( HLALA_PREPAREGRAPH.out.graph )
+                            .set { ch_hlala_typing_input }
     }
 
 
     if ( params.graph != "") {
+
+        // set HLALA_TYPING input
         ch_graph = Channel.fromPath(params.graph)
 
         ch_bam_pe_corrected.join(SAMTOOLS_INDEX.out.bai)
@@ -250,12 +258,14 @@ workflow HLATYPING {
         
         
         
-        HLALA_TYPING ( 
-            ch_hlala_typing_input
-        )
+        
 
         //ch_versions = ch_versions.mix(HLALA_TYPING.out.versions)
     }
+
+    HLALA_TYPING ( 
+            ch_hlala_typing_input
+        )
 
     //
     // MODULE: Pipeline reporting
