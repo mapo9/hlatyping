@@ -60,6 +60,7 @@ include { YARA_MAPPER                 } from '../modules/nf-core/yara/mapper/mai
 include { HLALA_PREPAREGRAPH          } from '../modules/nf-core/hlala/preparegraph/main'
 include { HLALA_TYPING                } from '../modules/nf-core/hlala/typing/main'
 include { SAMTOOLS_INDEX              } from '../modules/nf-core/samtools/index/main'
+include { SAMTOOLS_MERGE              } from '../modules/nf-core/samtools/merge/main'
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -101,7 +102,6 @@ workflow HLATYPING {
         }
         .set { ch_bam_pe_corrected }
     ch_versions = ch_versions.mix(CHECK_PAIRED.out.versions)
-
 
     //
     // MODULE: Run COLLATEFASTQ
@@ -179,6 +179,8 @@ workflow HLATYPING {
     )
     ch_versions = ch_versions.mix(YARA_MAPPER.out.versions)
     
+    
+        
     // MODULE: OptiType
     
     OPTITYPE (
@@ -190,18 +192,28 @@ workflow HLATYPING {
     // ===================== HLA-LA =====================
     //
 
+    
+    // MODULE: SAMTOOLS MERGE
+    // The input for HLA-LA must be a single BAM file
+
+    SAMTOOLS_MERGE (
+        YARA_MAPPER.out.bam,
+        [],
+        []
+    )
+
+    ch_versions = ch_versions.mix(SAMTOOLS_MERGE.out.versions)
+    
     // MODULE: SAMTOOLS INDEX
+    // Index merged BAM
 
     SAMTOOLS_INDEX(
-        ch_bam_pe_corrected
+        SAMTOOLS_MERGE.out.bam
     )
     ch_versions = ch_versions.mix(SAMTOOLS_INDEX.out.versions)
-
-    //
-    // MODULE: HLA-LA
-    //
-
-
+    
+    
+    // MODULE: HLALA PREPAREGRAPH
     
     if ( params.preparegraph != "") {
         ch_preparegraph = Channel.fromPath(params.preparegraph)
@@ -222,54 +234,40 @@ workflow HLATYPING {
         ch_versions = ch_versions.mix(HLALA_PREPAREGRAPH.out.versions)
 
         // set HLALA_TYPING input
-        ch_bam_pe_corrected.join(SAMTOOLS_INDEX.out.bai)
-                            .flatten()
-                            .join( HLALA_PREPAREGRAPH.out.graph )
-                            .set { ch_hlala_typing_input }
+        SAMTOOLS_MERGE.out.bam.join(SAMTOOLS_INDEX.out.bai)
+                                .flatten()
+                                .join( HLALA_PREPAREGRAPH.out.graph )
+                                .set { ch_hlala_typing_input }
     }
-
 
     if ( params.graph != "") {
 
         // set HLALA_TYPING input
         ch_graph = Channel.fromPath(params.graph)
 
-        ch_bam_pe_corrected.join(SAMTOOLS_INDEX.out.bai)
-                            .flatten()
-                            .concat( ch_graph )
-                            .toList()
-                            .set { ch_hlala_typing_input }
-
-        // ch_bam_pe_corrected.concat(ch_graph)
-        //                     .flatten()
-        //                     .toList()
-        //                     .map{ meta, bam, graph ->
-        //                             [meta, [graph]]
-        //                     }
-        //                     .set {meta_graph_ch}
-        
-        // YARA_MAPPER.out.bam.join(YARA_MAPPER.out.bai).dump(tag: "yara_joined")
-
-        // YARA_MAPPER.out.bam.join(YARA_MAPPER.out.bai)
-        //                     .join(meta_graph_ch)
-        //                     .set { ch_hlala_typing_input }
-        // ch_hlala_typing_input.dump(tag: "hlatyping_input")
-
-        
-        
-        
-        
-
-        //ch_versions = ch_versions.mix(HLALA_TYPING.out.versions)
+        SAMTOOLS_MERGE.out.bam.join(SAMTOOLS_INDEX.out.bai)
+                                .flatten()
+                                .concat(ch_graph)
+                                .toList()
+                                .set { ch_hlala_typing_input }
+                                
     }
+    ch_hlala_typing_input.dump(tag:"typing input") 
 
-    HLALA_TYPING ( 
-            ch_hlala_typing_input
-        )
+    // MODULE: HLALA TYPING
 
+    // HLALA_TYPING ( 
+    //         ch_hlala_typing_input
+    //     )
+
+    //ch_versions = ch_versions.mix(HLALA_TYPING.out.versions)
+
+    
+    
     //
     // MODULE: Pipeline reporting
     //
+
     CUSTOM_DUMPSOFTWAREVERSIONS (
         ch_versions.unique().collectFile(name: 'collated_versions.yml')
     )
