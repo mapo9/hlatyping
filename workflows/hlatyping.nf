@@ -218,14 +218,15 @@ workflow HLATYPING {
     if ( params.preparegraph != "") {
         ch_preparegraph = Channel.fromPath(params.preparegraph)
 
-        ch_input_files.fastq
-        .concat( ch_preparegraph )
-        .flatten()
-        .toList()
-        .map { meta, read_1, read_2, graph ->
-                [meta, graph]
-        }
-        .set { ch_hlala_preparegraph_input }
+        SAMTOOLS_MERGE.out.bam
+            .flatten()
+            .concat( ch_preparegraph )
+            .toList()
+            .map { meta, bam, graph ->
+                    [meta, graph] }
+            .set { ch_hlala_preparegraph_input }
+
+        ch_hlala_preparegraph_input.dump(tag: "preparegraph")
 
         HLALA_PREPAREGRAPH ( 
             ch_hlala_preparegraph_input
@@ -233,11 +234,11 @@ workflow HLATYPING {
     
         ch_versions = ch_versions.mix(HLALA_PREPAREGRAPH.out.versions)
 
-        // set HLALA_TYPING input
-        SAMTOOLS_MERGE.out.bam.join(SAMTOOLS_INDEX.out.bai)
-                                .flatten()
-                                .join( HLALA_PREPAREGRAPH.out.graph )
-                                .set { ch_hlala_typing_input }
+        // // set HLALA_TYPING input
+        // SAMTOOLS_MERGE.out.bam.join(SAMTOOLS_INDEX.out.bai)
+        //                         .flatten()
+        //                         .join( HLALA_PREPAREGRAPH.out.graph )
+        //                         .set { ch_hlala_typing_input }
     }
 
     if ( params.graph != "") {
@@ -252,7 +253,7 @@ workflow HLATYPING {
                                 .set { ch_hlala_typing_input }
                                 
     }
-    ch_hlala_typing_input.dump(tag:"typing input") 
+    //ch_hlala_typing_input.dump(tag:"typing input") 
 
     // MODULE: HLALA TYPING
 
