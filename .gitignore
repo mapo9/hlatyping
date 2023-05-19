@@ -6,3 +6,7 @@ results/
 testing/
 testing*
 *.pyc
+
+# test files
+dev_files
+dev_tests

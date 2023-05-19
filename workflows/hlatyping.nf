@@ -60,6 +60,7 @@ include { YARA_MAPPER                 } from '../modules/nf-core/yara/mapper/mai
 include { HLALA_PREPAREGRAPH          } from '../modules/nf-core/hlala/preparegraph/main'
 include { HLALA_TYPING                } from '../modules/nf-core/hlala/typing/main'
 include { SAMTOOLS_INDEX              } from '../modules/nf-core/samtools/index/main'
+include { SAMTOOLS_INDEX  as S_I2     } from '../modules/nf-core/samtools/index/main'
 include { SAMTOOLS_MERGE              } from '../modules/nf-core/samtools/merge/main'
 
 /*
@@ -226,19 +227,17 @@ workflow HLATYPING {
                     [meta, graph] }
             .set { ch_hlala_preparegraph_input }
 
-        ch_hlala_preparegraph_input.dump(tag: "preparegraph")
-
         HLALA_PREPAREGRAPH ( 
             ch_hlala_preparegraph_input
         )
     
         ch_versions = ch_versions.mix(HLALA_PREPAREGRAPH.out.versions)
 
-        // // set HLALA_TYPING input
-        // SAMTOOLS_MERGE.out.bam.join(SAMTOOLS_INDEX.out.bai)
-        //                         .flatten()
-        //                         .join( HLALA_PREPAREGRAPH.out.graph )
-        //                         .set { ch_hlala_typing_input }
+        // set HLALA_TYPING input
+        SAMTOOLS_MERGE.out.bam.join(SAMTOOLS_INDEX.out.bai)
+                                .join( HLALA_PREPAREGRAPH.out.graph )
+                                .set { ch_hlala_typing_input }
+        //ch_hlala_typing_input.dump(tag:"in")
     }
 
     if ( params.graph != "") {
@@ -256,12 +255,16 @@ workflow HLATYPING {
     //ch_hlala_typing_input.dump(tag:"typing input") 
 
     // MODULE: HLALA TYPING
+    S_I2( ch_bam_pe_corrected )
 
-    // HLALA_TYPING ( 
-    //         ch_hlala_typing_input
-    //     )
+    ch_bam_pe_corrected.join(S_I2.out.bai).join(HLALA_PREPAREGRAPH.out.graph).set { ch_tst }
 
-    //ch_versions = ch_versions.mix(HLALA_TYPING.out.versions)
+    HLALA_TYPING ( 
+            //ch_hlala_typing_input
+            ch_tst
+        )
+
+    // ch_versions = ch_versions.mix(HLALA_TYPING.out.versions)
 
     
     
