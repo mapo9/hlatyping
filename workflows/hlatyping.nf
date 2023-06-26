@@ -113,6 +113,11 @@ workflow HLATYPING {
     ch_versions = ch_versions.mix(SAMTOOLS_COLLATEFASTQ.out.versions)
 
     //
+    // index corrected bam file
+    //
+    S_I2( ch_bam_pe_corrected )
+
+    //
     // Filter for reads depending on pairedness
     //
     SAMTOOLS_COLLATEFASTQ.out.reads
@@ -180,7 +185,6 @@ workflow HLATYPING {
     )
     ch_versions = ch_versions.mix(YARA_MAPPER.out.versions)
     
-    
         
     // MODULE: OptiType
     
@@ -217,6 +221,7 @@ workflow HLATYPING {
     // MODULE: HLALA PREPAREGRAPH
     
     if ( params.preparegraph != "") {
+
         ch_preparegraph = Channel.fromPath(params.preparegraph)
 
         SAMTOOLS_MERGE.out.bam
@@ -238,6 +243,9 @@ workflow HLATYPING {
                                 .join( HLALA_PREPAREGRAPH.out.graph )
                                 .set { ch_hlala_typing_input }
         //ch_hlala_typing_input.dump(tag:"in")
+
+        ch_bam_pe_corrected.join(S_I2.out.bai).join(HLALA_PREPAREGRAPH.out.graph).set { ch_hla_typing_in }
+
     }
 
     if ( params.graph != "") {
@@ -250,18 +258,18 @@ workflow HLATYPING {
                                 .concat(ch_graph)
                                 .toList()
                                 .set { ch_hlala_typing_input }
+        
+        ch_bam_pe_corrected.join(S_I2.out.bai)
+            .join(ch_graph)
+            .set { ch_hla_typing_in }
                                 
     }
     //ch_hlala_typing_input.dump(tag:"typing input") 
 
     // MODULE: HLALA TYPING
-    S_I2( ch_bam_pe_corrected )
-
-    ch_bam_pe_corrected.join(S_I2.out.bai).join(HLALA_PREPAREGRAPH.out.graph).set { ch_tst }
-
     HLALA_TYPING ( 
             //ch_hlala_typing_input
-            ch_tst
+            ch_hla_typing_in
         )
 
     // ch_versions = ch_versions.mix(HLALA_TYPING.out.versions)
