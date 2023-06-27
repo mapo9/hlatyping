@@ -179,18 +179,6 @@ workflow HLATYPING {
         ch_mapping_input.index
     )
     ch_versions = ch_versions.mix(YARA_MAPPER.out.versions)
-    
-
-    // MODULE: SAMTOOLS MERGE
-    // The input for HLA-LA must be a single BAM file
-
-    SAMTOOLS_MERGE (
-        YARA_MAPPER.out.bam,
-        [],
-        []
-    )
-
-    ch_versions = ch_versions.mix(SAMTOOLS_MERGE.out.versions)
 
         
     // MODULE: OptiType
@@ -203,6 +191,24 @@ workflow HLATYPING {
     //
     // ===================== HLA-LA =====================
     //
+
+     // MODULE: SAMTOOLS MERGE
+    // If FASTQ input, the files must be merged to a single bam
+
+    YARA_MAPPER.out.bam
+        .branch { meta, files ->
+            bam_in : meta.data_type == "bam"
+            fastq_in : meta.data_type == "fastq"
+        }
+        .set { ch_merge_input }
+
+    SAMTOOLS_MERGE (
+        ch_merge_input.fastq_in,
+        [],
+        []
+    )
+
+    ch_versions = ch_versions.mix(SAMTOOLS_MERGE.out.versions)
 
     // MODULE: SAMTOOLS INDEX
     // Index original BAM if BAM input
@@ -243,7 +249,6 @@ workflow HLATYPING {
             .join(HLALA_PREPAREGRAPH.out.graph)
             .set { ch_hla_typing_in }
 
-        ch_hla_typing_in.dump(tag:"in")
 
     }
 
@@ -255,26 +260,38 @@ workflow HLATYPING {
         ch_bam_pe_corrected
             .join(SAMTOOLS_INDEX.out.bai)
             .flatten()
-            .concat(ch_graph)
+            //.concat(ch_graph)
             .toList()
-            .set { ch_hla_typing_in }
+            .set { ch_hla_typing_bam }
 
-        ch_hla_typing_in.dump(tag:"in")
 
         // set HLALA_TYPING input FASTQ INPUT        
         SAMTOOLS_MERGE.out.bam
             .join(S_INDEX2.out.bai)
             .flatten()
-            .concat(ch_graph)
+            //.concat(ch_graph)
             .toList()
+            .set { ch_hla_typing_fastq }
+        
+
+        ch_hla_typing_bam.concat(ch_hla_typing_fastq).concat(ch_graph).toList()
+            .map { bam_in, fastq_in, graph ->
+                if (bam_in.isEmpty()) {
+                    return [fastq_in, graph]
+                }
+                if (fastq_in.isEmpty()) {
+                    return [bam_in, graph]
+                }
+            }
             .set { ch_hla_typing_in }
 
-        ch_hla_typing_in.dump(tag:"in")                           
     }
 
+    //
     // MODULE: HLALA TYPING
+    //
     HLALA_TYPING ( 
-            ch_hla_typing_in
+            ch_hla_typing_in.flatten().toList()
         )
 
     ch_versions = ch_versions.mix(HLALA_TYPING.out.versions)
