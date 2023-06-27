@@ -47,21 +47,22 @@ include { INPUT_CHECK } from '../subworkflows/local/input_check'
 //
 // MODULE: Installed directly from nf-core/modules
 //
-include { FASTQC                      } from '../modules/nf-core/fastqc/main'
-include { MULTIQC                     } from '../modules/nf-core/multiqc/main'
-include { CUSTOM_DUMPSOFTWAREVERSIONS } from '../modules/nf-core/custom/dumpsoftwareversions/main'
-include { GUNZIP                      } from '../modules/nf-core/gunzip/main'
-include { OPTITYPE                    } from '../modules/nf-core/optitype/main'
-include { CHECK_PAIRED                } from '../modules/local/check_paired'
-include { SAMTOOLS_COLLATEFASTQ       } from '../modules/nf-core/samtools/collatefastq/main'
-include { SAMTOOLS_VIEW               } from '../modules/nf-core/samtools/view/main'
-include { YARA_INDEX                  } from '../modules/nf-core/yara/index/main'
-include { YARA_MAPPER                 } from '../modules/nf-core/yara/mapper/main'
-include { HLALA_PREPAREGRAPH          } from '../modules/nf-core/hlala/preparegraph/main'
-include { HLALA_TYPING                } from '../modules/nf-core/hlala/typing/main'
-include { SAMTOOLS_INDEX              } from '../modules/nf-core/samtools/index/main'
-include { SAMTOOLS_INDEX  as S_I2     } from '../modules/nf-core/samtools/index/main'
-include { SAMTOOLS_MERGE              } from '../modules/nf-core/samtools/merge/main'
+include { FASTQC                        } from '../modules/nf-core/fastqc/main'
+include { MULTIQC                       } from '../modules/nf-core/multiqc/main'
+include { CUSTOM_DUMPSOFTWAREVERSIONS   } from '../modules/nf-core/custom/dumpsoftwareversions/main'
+include { GUNZIP                        } from '../modules/nf-core/gunzip/main'
+include { OPTITYPE                      } from '../modules/nf-core/optitype/main'
+include { CHECK_PAIRED                  } from '../modules/local/check_paired'
+include { SAMTOOLS_COLLATEFASTQ         } from '../modules/nf-core/samtools/collatefastq/main'
+include { SAMTOOLS_VIEW                 } from '../modules/nf-core/samtools/view/main'
+include { YARA_INDEX                    } from '../modules/nf-core/yara/index/main'
+include { YARA_MAPPER                   } from '../modules/nf-core/yara/mapper/main'
+include { HLALA_PREPAREGRAPH            } from '../modules/nf-core/hlala/preparegraph/main'
+include { HLALA_TYPING                  } from '../modules/nf-core/hlala/typing/main'
+include { SAMTOOLS_INDEX                } from '../modules/nf-core/samtools/index/main'
+include { SAMTOOLS_INDEX as S_INDEX2    } from '../modules/nf-core/samtools/index/main'
+include { SAMTOOLS_MERGE                } from '../modules/nf-core/samtools/merge/main'
+include { ARCASHLA_EXTRACT              } from '../modules/nf-core/arcashla/extract/main'                                                                                                                                            
 
 /*
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -113,11 +114,6 @@ workflow HLATYPING {
     ch_versions = ch_versions.mix(SAMTOOLS_COLLATEFASTQ.out.versions)
 
     //
-    // index corrected bam file
-    //
-    S_I2( ch_bam_pe_corrected )
-
-    //
     // Filter for reads depending on pairedness
     //
     SAMTOOLS_COLLATEFASTQ.out.reads
@@ -137,6 +133,7 @@ workflow HLATYPING {
                 [ meta, file("$projectDir/data/references/hla_reference_${meta['seq_type']}.fasta") ]
         }
         .set { ch_input_with_references }
+
 
 
     //
@@ -169,7 +166,6 @@ workflow HLATYPING {
         }
         .set { ch_mapping_input }
 
-
     //
     // MODULE: Run Yara mapping
     //
@@ -185,6 +181,18 @@ workflow HLATYPING {
     )
     ch_versions = ch_versions.mix(YARA_MAPPER.out.versions)
     
+
+    // MODULE: SAMTOOLS MERGE
+    // The input for HLA-LA must be a single BAM file
+
+    SAMTOOLS_MERGE (
+        YARA_MAPPER.out.bam,
+        [],
+        []
+    )
+
+    ch_versions = ch_versions.mix(SAMTOOLS_MERGE.out.versions)
+
         
     // MODULE: OptiType
     
@@ -197,80 +205,87 @@ workflow HLATYPING {
     // ===================== HLA-LA =====================
     //
 
-    
-    // MODULE: SAMTOOLS MERGE
-    // The input for HLA-LA must be a single BAM file
-
-    SAMTOOLS_MERGE (
-        YARA_MAPPER.out.bam,
-        [],
-        []
-    )
-
-    ch_versions = ch_versions.mix(SAMTOOLS_MERGE.out.versions)
-    
     // MODULE: SAMTOOLS INDEX
-    // Index merged BAM
-
+    // Index original BAM if BAM input
     SAMTOOLS_INDEX(
-        SAMTOOLS_MERGE.out.bam
+        ch_bam_pe_corrected
     )
     ch_versions = ch_versions.mix(SAMTOOLS_INDEX.out.versions)
-    
-    
-    // MODULE: HLALA PREPAREGRAPH
-    
-    if ( params.preparegraph != "") {
 
-        ch_preparegraph = Channel.fromPath(params.preparegraph)
+    // Index merged BAM if FASTQ input
 
+    S_INDEX2(
         SAMTOOLS_MERGE.out.bam
-            .flatten()
-            .concat( ch_preparegraph )
-            .toList()
-            .map { meta, bam, graph ->
-                    [meta, graph] }
-            .set { ch_hlala_preparegraph_input }
+    )
+    ch_versions = ch_versions.mix(S_INDEX2.out.versions)
 
-        HLALA_PREPAREGRAPH ( 
-            ch_hlala_preparegraph_input
-        )
+    // MODULE: arcasHLA extract
+
+    ARCASHLA_EXTRACT (
+        ch_bam_pe_corrected
+    )
+    ch_versions = ch_versions.mix(ARCASHLA_EXTRACT.out.versions)
+
+
+
+
+    // // MODULE: HLALA PREPAREGRAPH
     
-        ch_versions = ch_versions.mix(HLALA_PREPAREGRAPH.out.versions)
+    // if ( params.preparegraph != "") {
 
-        // set HLALA_TYPING input
-        SAMTOOLS_MERGE.out.bam.join(SAMTOOLS_INDEX.out.bai)
-                                .join( HLALA_PREPAREGRAPH.out.graph )
-                                .set { ch_hlala_typing_input }
-        //ch_hlala_typing_input.dump(tag:"in")
+    //     ch_preparegraph = Channel.fromPath(params.preparegraph)
 
-        ch_bam_pe_corrected.join(S_I2.out.bai).join(HLALA_PREPAREGRAPH.out.graph).set { ch_hla_typing_in }
+    //     HLALA_PREPAREGRAPH ( 
+    //         ch_hlala_preparegraph_input
+    //     )
+    
+    //     ch_versions = ch_versions.mix(HLALA_PREPAREGRAPH.out.versions)
 
-    }
+    //     // set HLALA_TYPING input BAM INPUT
+    //     ch_bam_pe_corrected
+    //         .join(SAMTOOLS_INDEX.out.bai)
+    //         .join(HLALA_PREPAREGRAPH.out.graph)
+    //         .set { ch_hla_typing_in }
 
-    if ( params.graph != "") {
+    //     // set HLALA_TYPING input FASTQ INPUT        
+    //     SAMTOOLS_MERGE.out.bam
+    //         .join(S_INDEX2.out.bai)
+    //         .join(HLALA_PREPAREGRAPH.out.graph)
+    //         .set { ch_hla_typing_in }
 
-        // set HLALA_TYPING input
-        ch_graph = Channel.fromPath(params.graph)
+    //     ch_hla_typing_in.dump(tag:"in")
 
-        SAMTOOLS_MERGE.out.bam.join(SAMTOOLS_INDEX.out.bai)
-                                .flatten()
-                                .concat(ch_graph)
-                                .toList()
-                                .set { ch_hlala_typing_input }
+    // }
+
+    // if ( params.graph != "") {
+
+    //     ch_graph = Channel.fromPath(params.graph)
         
-        ch_bam_pe_corrected.join(S_I2.out.bai)
-            .join(ch_graph)
-            .set { ch_hla_typing_in }
-                                
-    }
-    //ch_hlala_typing_input.dump(tag:"typing input") 
+    //     // set HLALA_TYPING input BAM INPUT
+    //     ch_bam_pe_corrected
+    //         .join(SAMTOOLS_INDEX.out.bai)
+    //         .flatten()
+    //         .concat(ch_graph)
+    //         .toList()
+    //         .set { ch_hla_typing_in }
 
-    // MODULE: HLALA TYPING
-    HLALA_TYPING ( 
-            //ch_hlala_typing_input
-            ch_hla_typing_in
-        )
+    //     ch_hla_typing_in.dump(tag:"in")
+
+    //     // set HLALA_TYPING input FASTQ INPUT        
+    //     SAMTOOLS_MERGE.out.bam
+    //         .join(S_INDEX2.out.bai)
+    //         .flatten()
+    //         .concat(ch_graph)
+    //         .toList()
+    //         .set { ch_hla_typing_in }
+
+    //     ch_hla_typing_in.dump(tag:"in")                           
+    // }
+
+    // // MODULE: HLALA TYPING
+    // HLALA_TYPING ( 
+    //         ch_hla_typing_in
+    //     )
 
     // ch_versions = ch_versions.mix(HLALA_TYPING.out.versions)
 
